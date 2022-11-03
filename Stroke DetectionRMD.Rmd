@@ -1,0 +1,414 @@
+---
+title: "Data Powered Stroke Prevention"
+author: "Motolani Ojo-Bello"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r, echo=FALSE,,warning=FALSE,message=FALSE,label="Importing Libraries and Data"}
+#setting download timeout to 100000 seconds
+options(timeout=100000)
+
+#INSTALLING/LOADING LIBRARIES
+# Note: this process could take a couple of minutes
+# Note: this process could take a couple of minutes
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
+if(!require(readr)) install.packages("xgboost", repos = "http://cran.us.r-project.org")
+if(!require(ggthemes)) install.packages("ggthemes", repos = "http://cran.us.r-project.org")
+if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
+if(!require(knitr)) install.packages("knitr", repos = "http://cran.us.r-project.org")
+if(!require(performanceEstimation)) install.packages("performanceEstimation", repos = "http://cran.us.r-project.org")
+if(!require(BBmisc)) install.packages("BBmisc", repos = "http://cran.us.r-project.org")
+if(!require(checkmate)) install.packages("checkmate", repos = "http://cran.us.r-project.org")
+if(!require(parallelMap)) install.packages("parallelMap", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+library(tidyverse)
+library(caret)
+library(data.table)
+library(lubridate)
+library(readr)
+library(ggthemes)
+library(kableExtra)
+library(knitr)
+library(performanceEstimation)
+library(BBmisc)
+library(checkmate)
+library(parallelMap)
+library(ggplot2)
+#DOWNLOADING ZIPPED FILE CONTAINING DATA FROM KAGGLE
+
+url<-"https://download2293.mediafire.com/duvujejmck9g/2m8cmasmxos7gxd/archive.zip"
+dl <- tempfile()
+download.file(url, dl,mode = "wb")
+raw_data<-read_csv(unzip(dl,"healthcare-dataset-stroke-data.csv"),col_names=TRUE)
+
+
+#Changing column names to all small letters for convenience
+colnames(raw_data)<-c("id","gender","age","hypertension","heart_disease","ever_married","work_type","residence_type","avg_glucose_level","bmi","smoking_status","stroke")
+```
+
+# INTRODUCTION
+
+## INTRODUCTION
+A medical patient is said to have had a stroke when there is damage to the brain due to an interruption in its blood supply. According to a report from the World Health Organization (WHO) on the 28th of October 2021, stroke is the second leading cause of death and the third leading cause of disability globally. Also, based on the journal “Long-Term Survival and Causes of Death After Stroke” by Henrik Brønnum-Hansen et al in 2001, within a year of a stroke about 40% of patients die, the journal goes on to say that “The estimated cumulative risk for death was 60%, 76%, and 86% at 5, 10, and 15 years after the in stroke, respectively.” Furthermore, beyond the risk of death, strokes can also lead to several other health conditions like post-stroke seizures, urinary incontinence, bowel incontinence, cognitive impairment and hemiplegic shoulder pains amongst other things. Taking all this into consideration, stroke prevention where possible is much preferred to “the cure”. The objective of this project is to build a model that would be able to predict whether or not a person is likely to have a stroke or not so that they can take steps to adjust their lifestyles and prevent a stroke from actually happening. 
+
+The data used to build test and validate the model was taken from kaggle: https://www.kaggle.com/datasets/fedesoriano/stroke-prediction-dataset 
+I downloaded it into a temporary file within R, then I used “read_csv” and “unzip” to read the compressed csv file into a data frame. 
+
+The data frame contained data for patients who have and have not had strokes. This data is represented with the following columns and their corresponding values for each entry:
+
+1. id: A unique ID for the entry
+2. gender: Whether the patient was Male, Female or Other
+3. age: The age of the patient
+4. hypertension: Whether the patient has had hypertension in the past with a value of 1 or they have not with a value of 0
+5. heart_disease: Whether the patient has a heart disease with a value of 1 or not with a value of 0
+6. ever_married: “Yes” or “No”
+7. work_type: Their employment status, whether they are children, work a government job, have never worked, work a private job or are self-employed.
+8. residence_type: Whether they live in a rural or urban area
+9. avg_glucose_level: Average glucose level in the patients blood
+10. bmi: Their body mass index
+11. smoking_status: Whether they have formerly smoked, never smoked, smoke or if their smoking status is unknown
+12. stroke: the value we are trying to predict, Whether the patient had a stroke or not
+Numbers one to eleven are our predictors, and twelve is the variable we want to be able to predict. 
+
+## KEY STEPS
+The key steps taken to complete this project included, analyzing each predictor and their potential usefulness accompanied with visualization, ensuring each of these predictors was in the right format, training and testing the selected models on the data and observing the resulting performance metrics from these models.
+
+# METHODOLOGY   
+
+## MODIFICATION and ANALYSIS OF EACH PREDICTOR
+After importing the data, I went through each predictor to make sure they were in the right format and subsequently carried  out analysis on them one by one.Before that though, for the purpose of the analysis I also created another data frame “had_stroke” containing data for patients that actually had a stroke to support the analysis of the data.
+```{r, echo=FALSE,,warning=FALSE,message=FALSE,label="ANALYSIS OF ID PREDICTOR"}
+#CREATING A DATA FRAME FOR ALL PATIENTS WHO ACTUALLY HAD A STROKE
+had_stroke<- raw_data%>%filter(stroke==1)
+#ANALYSIS FOR EACH PREDICTOR INCLUDING PLOTS
+  #ID
+  # CHECK THAT LENGTH OF UNIQUE ID's is the same as the length of the data
+  #length(unique(raw_data$id))==nrow(raw_data)
+  #Removing id since it has no bearing on whether a person has stroke or not.
+  raw_data<-raw_data%>%select(!id)
+```
+### ID
+The ID’s provide unique identification for each patient, there are no duplicate ID’s(Each row in the data corresponds to a specific ID). Since there are no duplicates and we want a model that predicts the stroke rate for people in general, the IDs will not provide much significance to the construction of our model. So I removed this predictor
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE,label="ANALYSIS OF GENDER PREDICTOR"}
+#GENDER
+  #CREATING TABLE SHOWING DISTRIBUTION OF GENDERS IN THE DATA
+  gender_dist<- data.frame(gender=c("Male","Female","Other"),proportion=c(mean(raw_data$gender=="Male"),mean(raw_data$gender=="Female"),mean(raw_data$gender=="Other")))
+  gender_dist<-gender_dist%>%mutate(no_of_entries=proportion*nrow(raw_data))
+  #REMOVING ENTRY WITH gender="Other"
+  raw_data<-raw_data%>%filter(gender!="Other")
+  #CONVERTING GENDER TO A FACTOR
+  raw_data<- raw_data%>%mutate(gender=as.factor(gender))
+  #DISTRIBUTION OF GENDERS WITH STROKE
+  gender_with_stroke<- data.frame(gender=c("Male","Female"),proportion=c(mean(had_stroke$gender=="Male"),
+          mean(had_stroke$gender=="Female")))
+```
+### GENDER
+The gender column was a character vector containing the gender of the patient. Firstly, looking at the distribution of the genders as shown in the table below, there is only one entry with gender “Other” because it is only one entry and because of the lack of context to exactly what “Other” entails I removed that single entry from the data set. After that, I converted the gender vector from a character vector to a factor vector. 
+      `r knitr::kable(gender_dist,align='c')`
+      
+I also looked at the distribution of genders for the patients that had a stroke and as shown in the table below, there is a good proportion of both Men and women who had strokes in our data with slightly more female victims. This checks out with information on strokes across genders that women are more likely to have strokes because of their longer life expectancy and higher incidence at older ages.
+      `r knitr::kable(gender_with_stroke,align='c')`
+
+
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE,label="ANALYSIS OF AGE PREDICTOR"}
+#AGE
+  #Fuction to check if entries are whole numbers
+  is.wholenumber<- function(x){
+    x==round(x)
+  }
+  #Getting proportion of decimals in age data
+  prop_decimal_age<-(1-mean(sapply(raw_data$age, is.wholenumber)))*100
+  #Minimum and Maximum Ages
+  min_age<- min(raw_data$age)
+  max_age<- max(raw_data$age)
+  #Converting age to integer values
+  raw_data<-raw_data%>%mutate(age=round(age))%>%mutate(age=as.integer(age))
+  #Minimum, Average and Maximum Stroke victim ages
+  min_age_stroke<-min(had_stroke$age)
+  mean_age_stroke<- mean(had_stroke$age)
+  max_age_stroke<-max(had_stroke$age)
+  #Plot of Age Distribution of All Patients Segmented by Stroke Status
+  age_plot<-raw_data%>%mutate(stroke=ifelse(stroke==1,TRUE,FALSE))%>%ggplot(aes(age,group=stroke,fill=stroke))+geom_histogram(binwidth = 1,color="darkgoldenrod4")+theme_solarized_2()+xlab("Age")+ylab("Count")+
+  ggtitle("Age Distribution of All Patients")+scale_fill_discrete(name = "Stroke Victim?")+
+  theme(legend.title = element_text(colour="black", size=10,face="bold"))+
+  theme(legend.text = element_text(colour="black", size=8,face="bold"))+
+  scale_x_continuous(expand = c(0,0),n.breaks = 18)+scale_y_continuous(expand = c(0,0),n.breaks = 10)
+  
+```
+### AGE
+Looking at all the possible age values in our data, the ages range from ```r min_age``` to ```r max_age``` years old. Also, only ```r prop_decimal_age```% of age values are reported as decimals so I rounded them up and converted the ages from numeric to integers. The minimum age of a patient with stroke in our data set was ```r min_age_stroke``` just over one years old, this is a rare condition called pediatric stroke which according to Hopkins medicine happens to one in every 4000 children, by contrast the average age for our stroke victims was ```r mean_age_stroke ``` which is more in the range that would be expected.
+
+I also looked at the age distribution for all patients grouped by whether or not they had a stroke and from the resulting histogram below, we can see that the data has purposely been compiled so that there is a wide range of varying patient ages in our data set but despite this, most of the patients who had strokes are well above their 60s which is in line with medical theory, 90% of strokes happen to people over the age of 65 years old.
+
+```{r label="age distribution plot",echo=FALSE,warning=FALSE,message=FALSE,fig.width=11,fig.height=9}
+plot(age_plot) 
+```
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE,label="ANALYSIS OF HYPERTENSION AND HEART DIESEASE PREDICTORS"}
+#HYPERTENSION
+  #Hypertension and Heart Disease correlation
+  hyp_hd_cor<-cor(raw_data$hypertension,raw_data$heart_disease)
+  #Total number of hypertensive patients
+  all_hypertensive<- sum(raw_data$hypertension)
+  # Hypertensive patients who had stroke
+  stroke_hypertensive<-sum(had_stroke$hypertension)
+  #Percentage of heart disease patients who had stroke
+  per_hypertensive_stroke<- (stroke_hypertensive/all_hypertensive)*100
+  #Percentage of stroke patients with hypertension
+  stroke_prop_hypert<-mean(had_stroke$hypertension)*100
+  #Percentage of stroke patients in total data set
+  all_prop_hypert<-mean(raw_data$hypertension)*100
+  
+  #HEART DISEASES
+  #Total number of patients with heart diseases
+  all_hd<- sum(raw_data$heart_disease)
+  # Hypertensive patients who had stroke
+  stroke_hd<-sum(had_stroke$heart_disease)
+  #Percentage of heart disease patients who had stroke
+  per_hd_stroke<- (stroke_hd/all_hd)*100
+  #Percentage of stroke patients with hypertension
+  stroke_prop_hd<-mean(had_stroke$heart_disease)*100
+  #Percentage of stroke patients in total data set
+  all_prop_hd<-mean(raw_data$heart_disease)*100
+```
+### HYPERTENSION AND HEART DISEASE
+Hypertension is a condition where the pressure flow of blood in a patient's arteries is too high (Also called high blood pressure), over time hypertension increases the risk of having both heart diseases and stroke. 
+Heart diseases refer to any ailments that affect the heart of the patient and as earlier discussed, a stroke is a condition that affects the brain, according to medicinal science, either condition (heart disease or stroke) can lead to the other. This could lead to confounding within our model, however with the data collected, we know that the patients who had stroke either had heart diseases or they did not before the stroke happened. The other potential confounding issue is with hypertension and heart diseases, since hypertension causes heart diseases over time, however looking at the data there isn’t a strong correlation between both predictors. Just a correlation of `r hyp_hd_cor`.
+
+#### HYPERTENSION:
+The hypertension predictor has 1 or 0 values for whether the patient is hypertensive or not. There are `r all_hypertensive` hypertensive patients in our data set, out of those `r stroke_hypertensive` had strokes, so `r per_hypertensive_stroke`% of hypertensive patients had strokes. Also, `r stroke_prop_hypert`% of the stroke victims were hypertensive compared to `r all_prop_hypert`% of all the patients in the data showing that there is some correlation between hypertension and stroke
+
+
+#### HEART DISEASE:
+This predictor also has 1 or 0 values but for whether the patient has a heart disease or not. There are `r all_hd` patients with heart diseases in our data set `r stroke_hd` had strokes, so `r per_hd_stroke`% of patients with heart diseases had strokes. In addition, `r stroke_prop_hd`% of the stroke victims in the data had heart diseases compared to `r all_prop_hd`% of all the patients showing that there is a relationship between heart diseases and likelihood of a stroke.
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE,label="ANALYSIS OF MARRIAGE STATUS PREDICTOR"}
+  #EVER MARRIED
+  #Converting to factor
+  raw_data<-raw_data%>%mutate(ever_married=as.factor(ever_married))
+  #Percentage of married in total dat
+  mean_married_total<-mean(raw_data$ever_married=="Yes")*100
+  #Percentage of all patients over or exactly 30
+  mean_above_30<-mean(raw_data$age>=30)
+  #Percentage of  married that had stroke
+  had_stroke_married<- mean(had_stroke$ever_married=="Yes")*100
+  #Correlation between age and marriage status as 1 for married and 0 for not married
+  marriage_age_cor<-cor(raw_data$age,ifelse(raw_data$ever_married=="Yes",1,0))
+  #Removing ever married predictor
+  raw_data<-raw_data%>%select(!ever_married)
+```
+### EVER MARRIED
+This predictor gives a Yes or No reply to whether or not the patient has ever been married, in the total data set `r mean_married_total`% of patients are married of course it is worth noting that `r mean_above_30`% of all our patients are also above or exactly 30 years old so the high proportion of married patient is understandable. Looking at the stroke patients, `r had_stroke_married`percent of them are married, this may seem like a big jump, but it is worth noting that the older people are, the more likely they are to be married. So I looked at the correlation between age and marriage status (represented by 1 for married and 0 otherwise) and I obtained a correlation of `r marriage_age_cor` which is fairly high. Thus I didn’t use the marriage status for building my model.
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE,label="ANALYSIS OF WORK TYPE PREDICTOR"}
+  #WORK TYPE
+  #Distribution of work types in data
+  work_dist<- as.data.frame(table(raw_data$work_type))
+  colnames(work_dist)<-c("Work Type","Number of Entries")
+  #Table of all workers in Never worked section
+  never_worked<- raw_data%>%filter(work_type=="Never_worked")%>%select(age,work_type)
+  colnames(never_worked)<- c("Age","Work Type")
+  #creating table for percentage of workers in each role that had hypertension
+  percentage_with_hypertension<- 
+  data.frame(government_job=sum(had_stroke$work_type=="Govt_job")/sum(raw_data$work_type=="Govt_job"),
+  private=sum(had_stroke$work_type=="Private")/sum(raw_data$work_type=="Private"),
+  self_employed_job=sum(had_stroke$work_type=="Self-employed")/sum(raw_data$work_type=="Self-employed"))
+  percentage_with_hypertension<-transpose(percentage_with_hypertension)
+  percentage_with_hypertension<-percentage_with_hypertension%>%mutate(V1=V1*100)
+  colnames(percentage_with_hypertension)<- "% with hypertension"
+  rownames(percentage_with_hypertension)<- c("Government Work","Private","Self-employed")
+  # Converting Work type to 0 for unemployed and 1 for employed 
+  raw_data<- raw_data%>%mutate(work_type=ifelse(work_type=="children"|work_type=="Never_worked",0,1))
+  
+```
+### WORK TYPE
+This predictor contains the patients employment status (children, Government job, never worked, Private, Self employed) . We can see the distribution of work types in the table below.
+
+                    `r knitr::kable(work_dist,align='c')`
+
+Firstly I looked at the 22 entries that were classed as never worked as shown in the table below,, 21 of them were in their teens and there was one 23 year old because 22 is a very small sample size for young adults, I combined the children with the never worked into one class never worked
+
+                    `r knitr::kable(never_worked,align='c')`
+
+Also, I looked at all the three employment possibilities (Government work, Privat or Self-employed) and the proportion of each of them that had stroke as shown in the table below and there was no significant difference in the likelihood of having a stroke across them so I combined them into one class “working”
+
+                    `r knitr::kable(percentage_with_hypertension,align='c')`
+
+So, our work type now has 0 for unemployed and 1 for employed. However, as you would expect, there is a fairly high correlation(`r cor(raw_data$age,raw_data$work_type)`) between a patient's age and their employment status, so I removed this predictor. 
+
+```{r ,echo=FALSE,warning=FALSE,message=FALSE,label="REMOVAL OF WORK TYPE PREDICTOR"} 
+#REMOVING WORK TYPE PREDICTOR
+raw_data<- raw_data%>%select(!work_type)
+```
+
+```{r ,echo=FALSE,warning=FALSE,message=FALSE,label="ANALYSIS OF RESIDENCE TYPE PREDICTOR"}
+#RESIDENCE TYPE
+  #DISTRIBUTION OF PATIENTS IN RURAL AND URBAN AREAS FOR ALL PATIENTS AND STROKE VICTIMS
+  perc_stroke_rural<- mean(had_stroke$residence_type=="Rural")*100
+  perc_stroke_urban<- mean(had_stroke$residence_type=="Urban")*100
+  perc_total_rural<- mean(raw_data$residence_type=="Rural")*100
+  perc_total_urban<-mean(raw_data$residence_type=="Urban")*100
+  #Converting residence type to factor
+  raw_data<- raw_data%>% mutate(residence_type=as.factor(residence_type))
+  
+```
+### RESIDENCE TYPE
+This variable has two possible values for the type of community the patient lives in, rural or urban. According to The CANHEART Stroke Study stroke incidence is supposedly higher in rural areas, however in the data set, the distribution of stroke victims is fairly even in both rural and urban areas, with `r perc_stroke_rural`% in rural and `r perc_stroke_urban`% in urban areas. Also, our full patient data is fairly evenly distributed between rural and urban areas with `r perc_total_rural`% in rural areas and `r perc_total_urban`% in urban areas. The only change I made here was to make the residence type a factor rather than a character vector. 
+
+```{r ,echo=FALSE,warning=FALSE,message=FALSE,label="ANALYSIS OF GLUCOSE LEVEL PREDICTOR"}
+#GLUCOSE LEVEL
+  #Plot for distribution of glucose levels, showing high, low and optimal levels 
+  #Add line for high blood sugar
+  gluc_plot1<-raw_data%>%
+  mutate(Blood_Sugar_Level=ifelse(avg_glucose_level<=70,"Low Blood Sugar Level"
+  ,ifelse(avg_glucose_level>=140,"High Blood Sugar","Optimal Blood Sugar")))%>%
+  ggplot(aes(avg_glucose_level,fill=Blood_Sugar_Level))+geom_histogram(binwidth = 0.9)+
+  theme_solarized_2()+xlab("Average Glucose/Sugar Level")+ylab("Count")+
+  ggtitle("Distribution of Sugar Levels for All Patients")+scale_fill_discrete(name = "Sugar Level")+
+  theme(legend.title = element_text(colour="black", size=10,face="bold"))+
+  theme(legend.text = element_text(colour="black", size=8,face="bold"))+
+  scale_x_continuous(expand = c(0,0),n.breaks = 18)+scale_y_continuous(expand = c(0,0),n.breaks = 10)+geom_vline(xintercept=140, col = "black")
+  #TIBBLE Showing most patients are actually have optimal average glucose levels
+  prop_sug_level<-raw_data%>%mutate(Blood_Sugar_Level=ifelse(avg_glucose_level<=70,"Low Blood Sugar Level"
+  ,ifelse(avg_glucose_level>=140,"High Blood Sugar","Optimal Blood Sugar")))%>%
+  group_by(Blood_Sugar_Level)%>%summarise(percentage=n()*100/nrow(raw_data))  
+  #Plot for distribution of glucose levels of stroke victims
+  gluc_plot2<-had_stroke%>%
+  mutate(Blood_Sugar_Level=ifelse(avg_glucose_level<=70,"Low Blood Sugar Level"
+  ,ifelse(avg_glucose_level>=140,"High Blood Sugar","Optimal Blood Sugar")))%>%
+  ggplot(aes(avg_glucose_level,fill=Blood_Sugar_Level))+geom_histogram(binwidth = 4)+
+  theme_solarized_2()+xlab("Average Glucose/Sugar Level")+ylab("Count")+
+  ggtitle("Distribution of Sugar Levels for Stroke Victims")+scale_fill_discrete(name = "Sugar Level")+
+  theme(legend.title = element_text(colour="black", size=10,face="bold"))+
+  theme(legend.text = element_text(colour="black", size=8,face="bold"))+
+  scale_x_continuous(expand = c(0,0),n.breaks = 18)+scale_y_continuous(expand = c(0,0),n.breaks = 10)+geom_vline(xintercept=140, col = "black")
+  #TIBBLE Showing greater percentage of high blood sugar patients amongst stroke victims
+  prop_sug_level2<-had_stroke%>%
+  mutate(Blood_Sugar_Level=ifelse(avg_glucose_level<=70,"Low Blood Sugar Level"
+  ,ifelse(avg_glucose_level>=140,"High Blood Sugar","Optimal Blood Sugar")))%>%
+  group_by(Blood_Sugar_Level)%>%summarise(percentage=n()*100/nrow(had_stroke))
+  #PERCENTAGE OF HIGH SUGAR LEVEL PATIENTS WITH STROKE
+  perc_hbs_stroke<- (sum(raw_data$avg_glucose_level>=140)*100/sum(had_stroke$avg_glucose_level>=140))
+  
+```
+
+### GLUCOSE LEVEL
+The glucose level, also called blood sugar level is a measure of the concentration of sugar in a patient's blood stream.High blood sugar, above or equal to 140 milligrams per deciliter  mg/dL) usually happens when the patient's body can no longer make or use insulin properly causing the build up of sugar in the bloodstream. Over time, this can damage the body’s blood vessels increasing the chance of stroke. Research states that diabetic patients (patients whose bodies can no longer produce insulin) are twice as likely to have a stroke. Low blood sugar levels(below 70 mg/dL) are not known to increase chances of stroke. The plot below shows the distribution of glucose levels in our data set grouped by whether the patient has Low, Optimal or High sugar levels. As we can see in the plot, majority of the patients in our data set are below the black vertical line(Crossover point for high blood sugar 140 mg/dl)
+
+```{r label="glucose distribution plot 1",echo=FALSE,warning=FALSE,message=FALSE,fig.width=11,fig.height=9}
+plot(gluc_plot1) 
+```
+
+
+The table below confirms this, only `r prop_sug_level$percentage[1]` percent of our patients have high blood sugar levels
+
+                            `r knitr::kable(prop_sug_level,align='c')`
+                            
+Looking at the same plot for the patients that suffered stroke, we can see that a much larger proportion of the stroke victims have high blood sugar compared with the full data set.
+
+```{r label="glucose distribution plot 2",echo=FALSE,warning=FALSE,message=FALSE,fig.width=11,fig.height=9}
+plot(gluc_plot2) 
+```
+
+The table below confirms this, `r prop_sug_level2$percentage[1]`% of stroke victims had high blood sugar levels compared to just `r prop_sug_level$percentage[1]`% in our total data.
+
+                                  `r knitr::kable(prop_sug_level2,align='c')`
+
+```{r ,echo=FALSE,warning=FALSE,message=FALSE,label="ANALYSIS OF BMI PREDICTOR"}
+#BMI
+  #Converting bmi from character to Numeric
+  raw_data<-raw_data%>%mutate(bmi=as.numeric(bmi))
+  #Percentage of NA's roughly 4%
+  na_prop_bmi<- mean(is.na(raw_data$bmi))*100
+  #Removing rows with N/A values
+  raw_data<-raw_data%>%filter(!is.na(bmi))
+  #Recreating data for patients that had stroke
+  had_stroke<- raw_data%>%filter(stroke==1)
+  #Plot of distribution of BMI values grouped by whether patient had stroke or not finish plot
+  bmi_plot<-raw_data%>%mutate(stroke=ifelse(stroke==1,TRUE,FALSE))%>%ggplot(aes(bmi,group=stroke,fill=stroke))+   geom_histogram(binwidth = 3)+theme_solarized_2()+xlab("BMI")+ylab("Count")+
+  ggtitle("Distribution of BMI for all patients")+scale_fill_discrete(name = "Has Stroke?")+
+  theme(legend.title = element_text(colour="black", size=10,face="bold"))+
+  theme(legend.text = element_text(colour="black", size=8,face="bold"))+
+  scale_x_continuous(expand = c(0,0),n.breaks = 18)+scale_y_continuous(expand = c(0,0),n.breaks = 10)+geom_vline(xintercept=24.9, col = "black")
+  #percentage of underweight patients in data
+  underweight_perc<-mean(raw_data$bmi<18.5)*100
+```
+### BMI
+The BMI(Body Mass Index) is a metric used to measure a person's body fat based on their height and weight. The BMI is defined as the body mass divided by the square of the body height, and is expressed in units of kg/m². The healthy range for the BMI is between 18.5 to 24.9. Loosely speaking a patient with a BMI under 18.5 is underweight and a patient with a BMI over 24.9 is overweight. While being underweight slightly increases the likelihood of stroke compared to being in the healthy range, overweight patients have the highest risk factor.
+
+The bmi data was initially a character vector with either bmi values or N/A, I converted this to numeric and looking at the percentage of NA’s just `r na_prop_bmi`% I decided to remove rows with unavailable bmi values.
+ Looking at the distribution of the BMI values in our data, grouped by whether the patients had strokes or not, the increased stroke risk for underweight patients doesn’t really show up, likely because of the few number of underweight patients in our data `r underweight_perc`%. However, we can clearly see that majority of the stroke victims have BMI’s above 24.9 (shown by the black vertical line on the graph)
+```{r label="bmi distribution plot ",echo=FALSE,warning=FALSE,message=FALSE,fig.width=11,fig.height=9}
+plot(bmi_plot) 
+```
+```{r ,echo=FALSE,warning=FALSE,message=FALSE,label="ANALYSIS OF SMOKING STATUS PREDICTOR"}
+#SMOKING STATUS
+  #Converting smoking status to factor
+  raw_data<-raw_data%>%mutate(smoking_status=as.factor(smoking_status))
+```
+### SMOKING STATUS
+Smoking is known to increase the likelihood of a patient having a stroke. This predictor tells us whether the patient smokes, has never smoked or used to smoke. If this information is not known, it is also stated here. In our data `r mean(raw_data$smoking_status=="formerly smoked"|raw_data$smoking_status=="smokes")`% of all patients were either smokers or had smoked before but amongst stroke victims that rises to `r mean(had_stroke$smoking_status=="formerly smoked"|had_stroke$smoking_status=="smokes")`%. Also, I converted this predictor from a character to a factor.
+```{r ,echo=FALSE,warning=FALSE,message=FALSE,label="ANALYSIS OF STROKE"}
+#STROKE
+  #CLASSIFICATION PROBLEM Converting Stroke to a factor
+  raw_data<-raw_data%>%mutate(stroke=as.factor(raw_data$stroke))
+```
+### STROKE
+This is the value we are trying to predict, 1 for patients who had stroke and 0 for those that did not because of the nature of this problem (classification) I converted the stroke vector from numeric to categorical. It is worth noting that the data only contains `r mean(raw_data$stroke=="1")*100`% of stroke victims.
+
+```{r ,echo=FALSE,warning=FALSE,message=FALSE,label="SMOTE IMPLEMENTATION"}
+#USING SMOTE FOR INBALANCED CLASSIFICATION
+  smoted_data<-smote(stroke~., raw_data, perc.over = 20, k = 100, perc.under = 1)
+  #prop_stroke_victims
+  
+```
+
+```{r ,echo=FALSE,warning=FALSE,message=FALSE,label="RUNNING MODELS"}
+#SPLITTING DATA INTO TEST TRAIN AND VALIDATION
+#Test and Train Data 50% each of new data set
+test_index<- createDataPartition(y = smoted_data$stroke, times = 1, p = 0.5, list = FALSE)
+test_set<- smoted_data%>%dplyr::slice(test_index)
+train_set<-smoted_data%>%dplyr::slice(-test_index)
+
+
+#MODELING
+
+
+#KNN IMPLEMENTATION WITH SMOTE
+knn_train<-train(stroke~.,method="knn",data =train_set,tuneGrid=data.frame(k = seq(5, 50, 5)))
+knn_prediction<-predict(knn_train,test_set,type="raw")
+knn_conf_matrix<-confusionMatrix(knn_prediction,test_set$stroke)
+
+#RANDOM FOREST IMPLEMENTATION WITH SMOTE
+rf_train<-train(stroke~.,method="rf",data =train_set)
+rf_prediction<-predict(rf_train,test_set,type="raw")
+rf_conf_matrix<-confusionMatrix(rf_prediction,test_set$stroke)
+
+```
+# RESULTS
+
+## MODEL SELECTION
+After preparing all the predictors, the next step was to select and build the models. This problem is a binary classification problem, we want to know whether a patient is likely to have a stroke or not. However, before selecting the models, there is one issue, prevalence. Only `r mean(raw_data$stroke=="1")*100`% of the patients in our data actually had a stroke, the prevalence of patients who didn't have stroke is `r 1-mean(raw_data$stroke=="1")`, so a model run using this data will mostly just predict low risk of stroke for most patients to maximize accuracy. That would not be very useful since we want to maximize specificity (in this analysis, a patient not having stroke is the positive class), so in essence, we want to predict that a patient has risk of getting stroke where that is actually the case as much as possible. To work around this, I used the Synthetic Minority Oversampling Technique to generate a new data set with a better balance of stroke victims and those who did not have stroke. In this new data, `r mean(smoted_data$stroke=="1")*100`% of the patients were stroke victims which would allow us to build a more useful model. Like earlier stated, this problem is a classification problem. Also, we are more concerned with the accuracy of the model than it's interpretability. So I modeled with K-Nearest Neighbours and Ranfom Forest algorithms, both classification algorithms that give high accuracy.
+
+## TEST AND TRAIN DATA
+After getting the "smoted" data set, I partitioned it into test and train data before evaluating the models
+## K-Nearest Neighbours
+K-Nearest Neighbours (KNN) is a machine learning model that can be used for classification or regression problems, KNN makes classification predictions in the test set based on the classes of the closest k(tuning parameter that can be set) entry's in the training set. How close entries are is determined by their predictor values. 
+
+For my implementation, I tuned KNN between 5 and 50 and got a best fit of `r knn_train[["bestTune"]][["k"]]` as seen in the plot below.
+```{r label="KNN TUNE PLOT ",echo=FALSE,warning=FALSE,message=FALSE,fig.width=11,fig.height=8}
+ggplot(knn_train,highlight=TRUE)+theme_solarized_2()+xlab("K Values")+ylab("Accuracy")+
+  ggtitle("K-Nearest Neighbours Tuning")+
+  scale_x_continuous(expand = c(0,0),n.breaks = 18)+scale_y_continuous(expand = c(0,0),n.breaks = 10)+geom_vline(xintercept=140, col = "black") 
+```
+
+## Random Forest
+
+
+# CONCLUSION
